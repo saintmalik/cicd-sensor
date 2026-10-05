@@ -103,8 +103,38 @@ func (jr *JobRegistry) OnJobEnded(jobID jobcontext.JobIdentity, reason kerneltra
 	}()
 }
 
+// RequestGitHubProjectEnd synchronously finalizes a GitHub Job that has a
+// project scope but no host scope. The Action post step uses this on
+// third-party hosted runners whose VM teardown never signals the agent
+// (#195). GitHub-hosted project-only Jobs keep shutdown/TTL finalization.
+func (jr *JobRegistry) RequestGitHubProjectEnd(ctx context.Context, identity jobcontext.JobIdentity, peerPID int32) error {
+	registered := jr.get(identity)
+	if registered == nil {
+		jr.logger.WarnContext(ctx, "project_end_job_not_found", "job_identity", identity)
+		return nil
+	}
+	if registered.HostScope() != nil {
+		jr.logger.WarnContext(ctx, "project_end_with_host_scope", "job_identity", identity)
+		return ErrHostScopePresent
+	}
+	if registered.ProjectScope() == nil {
+		jr.logger.WarnContext(ctx, "project_end_without_project_scope", "job_identity", identity)
+		return job.ErrProjectScopeMissing
+	}
+	if err := jr.verifyPeerPIDBelongsToJob(ctx, peerPID, identity); err != nil {
+		return err
+	}
+	finalized, ok := jr.takeJob(identity)
+	if !ok {
+		jr.logger.WarnContext(ctx, "project_end_job_not_found", "job_identity", identity)
+		return nil
+	}
+	return jr.finalizeTakenJobSync(ctx, finalized, kerneltracker.EndProjectEnd, time.Now().UTC())
+}
+
 // RequestGitHubHostEnd synchronously finalizes a GitHub Job that has a host
-// scope. Hosted project-only Jobs keep using shutdown/TTL finalization.
+// scope. Hosted project-only Jobs keep using shutdown/TTL finalization unless
+// the Action post step calls RequestGitHubProjectEnd (#195).
 func (jr *JobRegistry) RequestGitHubHostEnd(ctx context.Context, identity jobcontext.JobIdentity, peerPID int32) error {
 	job := jr.get(identity)
 	if job == nil {

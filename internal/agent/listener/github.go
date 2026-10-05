@@ -223,6 +223,41 @@ func (l *Listener) handleGitHubHostEnd(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGitHubProjectEnd lets the GitHub Action post step finalize
+// project-only Jobs when runner teardown will not signal the agent (#195).
+func (l *Listener) handleGitHubProjectEnd(w http.ResponseWriter, r *http.Request) {
+	identity, ok := l.decodeGitHubJobIdentity(w, r)
+	if !ok {
+		return
+	}
+	peerPID, err := requestPeerPID(r.Context())
+	if err != nil {
+		l.logger.WarnContext(r.Context(), "peer_pid_unavailable", "error", err)
+		l.writeError(w, r, http.StatusBadRequest, "peer pid unavailable")
+		return
+	}
+	if err := l.jobRegistry.RequestGitHubProjectEnd(r.Context(), identity, peerPID); err != nil {
+		switch {
+		case errors.Is(err, jobregistry.ErrHostScopePresent):
+			l.writeError(w, r, http.StatusConflict, "job has host scope")
+		case errors.Is(err, job.ErrProjectScopeMissing):
+			l.writeError(w, r, http.StatusConflict, "job has no project scope")
+		case errors.Is(err, jobregistry.ErrPeerNotInJob):
+			l.writeError(w, r, http.StatusForbidden, "peer not in job tracking set")
+		default:
+			l.logger.ErrorContext(r.Context(), "project_end_failed", "job_identity", identity, "error", err)
+			l.writeError(w, r, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+
+	l.logger.InfoContext(r.Context(), "project_end_accepted", "job_identity", identity)
+	l.writeJSON(r.Context(), w, http.StatusOK, map[string]any{
+		"job_identity": identity,
+		"status":       "ok",
+	})
+}
+
 // handleGitHubProjectResult returns a report document snapshot; it does not
 // finalize the Job.
 func (l *Listener) handleGitHubProjectResult(w http.ResponseWriter, r *http.Request) {

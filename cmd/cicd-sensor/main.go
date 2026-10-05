@@ -47,6 +47,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  cicd-sensor job health [flags]")
 	fmt.Fprintln(os.Stderr, "  cicd-sensor project start [flags]")
 	fmt.Fprintln(os.Stderr, "  cicd-sensor project result [flags]")
+	fmt.Fprintln(os.Stderr, "  cicd-sensor project end [flags]")
 	fmt.Fprintln(os.Stderr, "  cicd-sensor proxy dockerd [flags]")
 	fmt.Fprintln(os.Stderr, "  cicd-sensor nri [flags]")
 }

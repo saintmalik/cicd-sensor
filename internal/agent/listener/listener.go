@@ -71,6 +71,7 @@ func New(cfg Config) *Listener {
 		mux.HandleFunc("POST /v1/github/host/end", l.handleGitHubHostEnd)
 		mux.HandleFunc("POST /v1/github/project/start", l.handleGitHubProjectStart)
 		mux.HandleFunc("POST /v1/github/project/result", l.handleGitHubProjectResult)
+		mux.HandleFunc("POST /v1/github/project/end", l.handleGitHubProjectEnd)
 		mux.HandleFunc("POST /v1/github/staging/put", l.handleGitHubStagingPut)
 		mux.HandleFunc("POST /v1/github/k8s/staging/put", l.handleGitHubK8sStagingPut)
 	case jobcontext.ProviderGitLab:

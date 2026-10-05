@@ -124,6 +124,53 @@ func TestJobRegistry_RequestGitHubHostEnd_ProjectOnlyJobReturnsError(t *testing.
 	}
 }
 
+func TestJobRegistry_RequestGitHubProjectEnd_FinalizesProjectOnlyJob(t *testing.T) {
+	t.Parallel()
+
+	jr := newTestJobRegistry()
+	id := jobcontext.GitHubJobIdentity("github.com", "acme/example", "123", "build", "1", "runner-1")
+	if _, err := jr.ApplyGitHubProjectStart(testCtx, GitHubProjectStartConfig{
+		Identity:   id,
+		RunnerType: "machine",
+	}); err != nil {
+		t.Fatalf("project start: %v", err)
+	}
+
+	if err := jr.RequestGitHubProjectEnd(testCtx, id, 1); err != nil {
+		t.Fatalf("project end: %v", err)
+	}
+	if got := jr.get(id); got != nil {
+		t.Fatalf("expected job to be removed, got %#v", got)
+	}
+}
+
+func TestJobRegistry_RequestGitHubProjectEnd_HostJobReturnsError(t *testing.T) {
+	t.Parallel()
+
+	jr := newTestJobRegistry()
+	id := jobcontext.GitHubJobIdentity("github.com", "acme/example", "123", "build", "1", "runner-1")
+	if _, err := jr.ApplyGitHubHostStart(testCtx, id, jobcontext.JobMetadata{}, "machine", 0, managerclient.Connection{}, fakeManagerFetcher{}); err != nil {
+		t.Fatalf("host start: %v", err)
+	}
+
+	if err := jr.RequestGitHubProjectEnd(testCtx, id, 1); !errors.Is(err, ErrHostScopePresent) {
+		t.Fatalf("project end error: got %v, want ErrHostScopePresent", err)
+	}
+	if got := jr.get(id); got == nil {
+		t.Fatal("host job should remain registered")
+	}
+}
+
+func TestJobRegistry_RequestGitHubProjectEnd_MissingJobIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	jr := newTestJobRegistry()
+	id := jobcontext.GitHubJobIdentity("github.com", "acme/example", "123", "build", "1", "runner-1")
+	if err := jr.RequestGitHubProjectEnd(testCtx, id, 1); err != nil {
+		t.Fatalf("project end missing job: %v", err)
+	}
+}
+
 func TestJobRegistry_RequestGitHubHostEnd_MissingJobIsIdempotent(t *testing.T) {
 	t.Parallel()
 

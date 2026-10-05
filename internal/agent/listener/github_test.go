@@ -537,6 +537,74 @@ func TestListener_HostEnd_MissingJobIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestListener_ProjectEnd_FinalizesProjectOnlyJob(t *testing.T) {
+	client, registry, cleanup := setupListenerWithRegistry(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]string{
+		"provider":                  "github",
+		"provider_host":             "github.com",
+		"project_path":              "acme/example",
+		"github_run_id":             "781",
+		"github_job":                "build",
+		"github_run_attempt":        "1",
+		"github_runner_tracking_id": "project_only_project_end",
+	})
+	startResp, err := client.Post("http://cicd-sensor/v1/github/project/start", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("project/start: %v", err)
+	}
+	startResp.Body.Close()
+
+	endResp, err := client.Post("http://cicd-sensor/v1/github/project/end", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("project/end: %v", err)
+	}
+	defer endResp.Body.Close()
+	if endResp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", endResp.StatusCode, http.StatusOK)
+	}
+
+	id := jobcontext.GitHubJobIdentity("github.com", "acme/example", "781", "build", "1", "project_only_project_end")
+	if job := listenerRegisteredJob(registry, id); job != nil {
+		t.Fatal("project-only job should be removed after project/end")
+	}
+}
+
+func TestListener_ProjectEnd_HostJobReturnsConflict(t *testing.T) {
+	client, registry, cleanup := setupListenerWithRegistry(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]string{
+		"provider":                  "github",
+		"provider_host":             "github.com",
+		"project_path":              "acme/example",
+		"github_run_id":             "782",
+		"github_job":                "build",
+		"github_run_attempt":        "1",
+		"github_runner_tracking_id": "host_only_project_end",
+	})
+	startResp, err := client.Post("http://cicd-sensor/v1/github/host/start", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("host/start: %v", err)
+	}
+	startResp.Body.Close()
+
+	endResp, err := client.Post("http://cicd-sensor/v1/github/project/end", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("project/end: %v", err)
+	}
+	defer endResp.Body.Close()
+	if endResp.StatusCode != http.StatusConflict {
+		t.Fatalf("status: got %d, want %d", endResp.StatusCode, http.StatusConflict)
+	}
+
+	id := jobcontext.GitHubJobIdentity("github.com", "acme/example", "782", "build", "1", "host_only_project_end")
+	if job := listenerRegisteredJob(registry, id); job == nil {
+		t.Fatal("host job should remain registered")
+	}
+}
+
 func TestListener_GitHubIdentityRoutes_RejectBadIdentityRequest(t *testing.T) {
 	client, cleanup := setupListener(t)
 	defer cleanup()
@@ -573,6 +641,9 @@ func TestListener_GitHubIdentityRoutes_RejectBadIdentityRequest(t *testing.T) {
 		{name: "host end invalid json", path: "/v1/github/host/end", body: []byte("not json")},
 		{name: "host end wrong provider", path: "/v1/github/host/end", body: mustJSON(t, wrongProvider)},
 		{name: "host end missing required identity", path: "/v1/github/host/end", body: mustJSON(t, missingRequired)},
+		{name: "project end invalid json", path: "/v1/github/project/end", body: []byte("not json")},
+		{name: "project end wrong provider", path: "/v1/github/project/end", body: mustJSON(t, wrongProvider)},
+		{name: "project end missing required identity", path: "/v1/github/project/end", body: mustJSON(t, missingRequired)},
 		{name: "project result invalid json", path: "/v1/github/project/result", body: []byte("not json")},
 		{name: "project result wrong provider", path: "/v1/github/project/result", body: mustJSON(t, wrongProvider)},
 		{name: "project result missing required identity", path: "/v1/github/project/result", body: mustJSON(t, missingRequired)},

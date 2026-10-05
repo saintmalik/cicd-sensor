@@ -150,6 +150,7 @@ The normal agent control socket exposes the provider route family selected at ag
 | GitHub | `/v1/github/host/end` | installed runner hook | End host scope for a machine runner Job. |
 | GitHub | `/v1/github/project/start` | project action | Create or attach project scope for a Job. |
 | GitHub | `/v1/github/project/result` | project action | Read project result data for reports and attestations. |
+| GitHub | `/v1/github/project/end` | project action post step | Finalize project-only Jobs when runner teardown will not signal the agent (#195). |
 | GitHub | `/v1/github/staging/put` | Docker proxy | Stage Docker-created container cgroup basenames by peer PID. |
 | GitHub | `/v1/github/k8s/staging/put` | host-side NRI observer | Stage Kubernetes-created container cgroup basenames by injected GitHub identity. |
 | GitLab | `/v1/gitlab/host/start` | explicit host start caller | Create GitLab host Job state from runner metadata. |
@@ -176,12 +177,12 @@ The control socket is mode `0o777`; request identification uses `SO_PEERCRED`:
 | Check | Endpoints | What it confirms |
 | --- | --- | --- |
 | Agent-owner UID | GitLab `host/start`, GitHub / GitLab staging endpoints | peer UID matches the agent process owner |
-| Peer in tracked Job | GitHub `host/end`, `project/result`, `job/health` | peer PID's cgroup is in an already-tracked Job |
+| Peer in tracked Job | GitHub `host/end`, `project/end`, `project/result`, `job/health` | peer PID's cgroup is in an already-tracked Job |
 | Seed | GitHub `host/start`, GitHub `k8s/start` | peer's cgroup becomes the new Job's tracked root |
 
 GitHub `project/start` is the mixed case: on a self-hosted runner the peer must already belong to the host Job (it attaches project scope); on a hosted runner no prior Job exists, so the peer's cgroup seeds a new project-only Job. Co-resident untrusted local users are out of scope.
 
-Endpoints reachable from inside the job may only accelerate log delivery (`project/result` flushes buffered manager logs); finalization stays with triggers the job cannot forge: cgroup lifecycle, the completed hook, TTL, and shutdown. For `host end`, the CLI's `job/health` probe before the end call is what makes a double end fail the completed hook — the agent-side handler is lenient on a missing Job.
+Endpoints reachable from inside the job may only accelerate log delivery (`project/result` flushes buffered manager logs) or finalize project-only Jobs from the Action post step when the runner environment is third-party hosted (`project/end`, #195). GitHub-hosted project-only Jobs otherwise keep shutdown/TTL finalization. For `host end` and `project end`, the CLI's `job/health` probe before the end call is what makes a double end fail the post step — the agent-side handler is lenient on a missing Job.
 
 Kubernetes support keeps the GitHub k8s start endpoint on a separate runner socket because the caller is inside the ARC runner container, while the normal control socket and NRI staging callers are host-side agent components.
 This keeps the container-visible surface to job start only and preserves the boundary between runner container code and host-side staging / runtime control.

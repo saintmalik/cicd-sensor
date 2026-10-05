@@ -7,6 +7,7 @@ type EndReason string
 const (
 	EndCgroupRmdir EndReason = "cgroup_rmdir"
 	EndHostEnd     EndReason = "host_end"
+	EndProjectEnd  EndReason = "project_end"
 	EndTTL         EndReason = "ttl"
 	EndShutdown    EndReason = "shutdown"
 	EndTerminate   EndReason = "terminate"

@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	projectUsage       = "usage: cicd-sensor project <start|result> [...]"
+	projectUsage       = "usage: cicd-sensor project <start|result|end> [...]"
 	projectStartUsage  = "usage: cicd-sensor project start [flags]"
 	projectResultUsage = "usage: cicd-sensor project result [flags]"
+	projectEndUsage    = "usage: cicd-sensor project end [flags]"
 
 	// projectResultResponseMaxBytes bounds the /v1/project/result response
 	// the CLI will ingest. It matches the agent-side cap (10 MiB) with a
@@ -36,6 +37,8 @@ func runProjectSubcommand(args []string) {
 		runProjectStart(args[1:])
 	case "result":
 		runProjectResult(args[1:])
+	case "end":
+		runProjectEnd(args[1:])
 	default:
 		fmt.Fprintln(os.Stderr, projectUsage)
 		os.Exit(2)
@@ -186,6 +189,64 @@ func runProjectResult(args []string) {
 
 	if err := writeProjectResult(outputFile, body, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "project result: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runProjectEnd(args []string) {
+	fs := flag.NewFlagSet("project end", flag.ExitOnError)
+	socketPath := defaultSocketPath
+	var identity jobIdentityFlags
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), projectEndUsage)
+		fmt.Fprintln(fs.Output())
+		printGitHubIdentityEnvHelp(fs.Output())
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), "Equivalent identity flags:")
+		fmt.Fprintln(fs.Output(), "  --provider github")
+		fmt.Fprintln(fs.Output(), "        CI provider. GitLab project end is Phase 2.")
+		fmt.Fprintln(fs.Output(), "  --provider-host HOST")
+		fmt.Fprintln(fs.Output(), "        Normalized CI provider host.")
+		fmt.Fprintln(fs.Output(), "  --project-path PATH")
+		fmt.Fprintln(fs.Output(), "        Provider project path, e.g. acme/example.")
+		fmt.Fprintln(fs.Output(), "  --github-run-id ID")
+		fmt.Fprintln(fs.Output(), "        GitHub Actions run ID.")
+		fmt.Fprintln(fs.Output(), "  --github-run-attempt N")
+		fmt.Fprintln(fs.Output(), "        GitHub Actions run attempt.")
+		fmt.Fprintln(fs.Output(), "  --github-job NAME")
+		fmt.Fprintln(fs.Output(), "        GitHub Actions job name.")
+		fmt.Fprintln(fs.Output(), "  --github-runner-tracking-id ID")
+		fmt.Fprintln(fs.Output(), "        GitHub runner tracking ID.")
+		fmt.Fprintln(fs.Output())
+		fmt.Fprintln(fs.Output(), "Optional flags:")
+		fmt.Fprintf(fs.Output(), "  --socket PATH\n        Agent control socket path. (default %q)\n", defaultSocketPath)
+	}
+	fs.StringVar(&socketPath, "socket", socketPath, "Agent control socket path.")
+	registerJobIdentityFlags(fs, &identity)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(2)
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, projectEndUsage)
+		os.Exit(2)
+	}
+	applyGitHubEnvFallback(&identity)
+	if err := requireGitHubProvider(identity, "project end supports only provider github; GitLab project end is Phase 2"); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	req, err := buildJobIdentityRequest(identity)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build request: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := postGitHubProjectEnd(ctx, socketPath, req); err != nil {
+		fmt.Fprintln(os.Stderr, formatAgentUnreachable(socketPath,
+			"The summary log for this run cannot be emitted.", err))
 		os.Exit(1)
 	}
 }

@@ -163,6 +163,13 @@ func postGitHubHostEnd(ctx context.Context, socketPath string, req map[string]st
 	return postSocket(ctx, socketPath, "/v1/github/host/end", req)
 }
 
+func postGitHubProjectEnd(ctx context.Context, socketPath string, req map[string]string) error {
+	if err := postSocket(ctx, socketPath, "/v1/github/job/health", req); err != nil {
+		return fmt.Errorf("job health: %w", err)
+	}
+	return postSocket(ctx, socketPath, "/v1/github/project/end", req)
+}
+
 func buildHostEndRequest(identity jobIdentityFlags) (map[string]string, error) {
 	return buildJobIdentityRequest(identity)
 }
